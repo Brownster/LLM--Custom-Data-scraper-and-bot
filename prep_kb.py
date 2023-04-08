@@ -12,7 +12,7 @@ from docx import Document
 
 os.environ["OPENAI_API_KEY"] = ''
 
-def load_documents_from_directory(directory: str) -> List[str]:
+def load_documents_from_directory(directory: str) -> List[dict]:
     documents = []
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
@@ -23,21 +23,20 @@ def load_documents_from_directory(directory: str) -> List[str]:
                     text = ''
                     for page in pdf_reader.pages:
                         text += page.extract_text()
-                    documents.append(text)
+                    documents.append({'page_content': text})
             except Exception as e:
                 update_status(f"Error loading document {filename}, exception: {str(e)}")
         elif filename.endswith('.docx'):
             try:
                 doc = Document(file_path)
                 text = "\n".join([para.text for para in doc.paragraphs])
-                documents.append(text)
+                documents.append({'page_content': text})
             except Exception as e:
                 update_status(f"Error loading document {filename}, exception: {str(e)}")
         else:
             continue
 
     return documents
-
 
 def extract_links(url, level=1, max_level=1):
     """
@@ -86,6 +85,7 @@ def prepare_kb():
     Prepares the knowledge base by loading documents from URLs, removing duplicates,
     and processing the documents with OpenAI embeddings.
     """
+    update_status("Extracting URLs from URLs provided...")
     # Extract URLs from the text widget and find all links within them
     start_urls = urls_text.get(1.0, END).strip().split("\n")
     all_urls = []
