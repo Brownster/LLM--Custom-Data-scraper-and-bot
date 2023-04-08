@@ -30,3 +30,5 @@ Creating a Chatbot
 License
 
 This project is released under the MIT License.
+
+Based on code from : https://github.com/prodramp/DeepWorks/blob/main/ChatGPT/LangChainOpenAI.md
