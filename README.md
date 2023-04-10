@@ -48,3 +48,4 @@ The tkinter module provides a graphical user interface (GUI) for the chatbot.
 openai
 
 The openai module provides access to OpenAI's GPT-3.5 model for generating text.
+![Screenshot from 2023-04-10 23-17-34](https://user-images.githubusercontent.com/6543166/231009624-0916d24b-e699-4f26-8ad3-94df42971bef.png)
