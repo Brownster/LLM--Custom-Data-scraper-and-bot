@@ -1,34 +1,50 @@
-# Knowledge Base Preparation and Chatbot
+Knowledge Base and Chatbot
 
-This project demonstrates how to create a custom knowledge base using OpenAI's GPT and langchain library and then use this knowledge base with a chatbot. The project contains two main parts: preparing the knowledge base and creating a chatbot.
+This repository contains code for preparing a knowledge base by extracting information from URLs and local PDF files, and a chatbot that can answer questions based on the prepared knowledge base. The chatbot uses OpenAI's GPT-3.5 model for answering questions and the Chroma vector store to search for relevant information in the knowledge base.
+Dependencies
 
-## Installation
+This project requires the following dependencies:
 
-To run the code in this project, you'll need to install the following Python packages:
+    bs4
+    requests
+    PyPDF2
+    docx
+    langchain
+    tkinter
+    tkinter.ttk
+    openai
 
-```sh
-pip install langchain openai beautifulsoup4 requests
+These can be installed via pip
 
-For Python 2.x users, you will also need to install the tkinter package:
+How to Run
 
-sh
+To prepare the knowledge base, run the prepare_kb() function by providing URLs to extract information from, the directory name where the vector store should be persisted, and the name of the collection. The max_level argument specifies how deep to extract links from the initial URLs. The documents_directory argument specifies the directory path to local PDF files that need to be included in the knowledge base. Once the function is run, the vector store will be persisted in the specified directory.
 
-pip install python-tk
+To run the chatbot, enter a question and click on the Ask button. The chatbot will use the prepared knowledge base to answer the question.
+Functions
+extract_links(url, level=1, max_level=1)
 
-Usage
-Preparing the Knowledge Base
+Extracts all the links from the given URL using Beautiful Soup recursively up to max_level.
 
-    Run the prepare_kb.py script. A GUI window will appear, allowing you to input the URLs, collection name, and directory name.
-    Provide the required information and click the "Prepare" button. The code will extract links from the URLs, remove duplicates, and create a knowledge base using the OpenAI API.
+    url (str): The URL to extract links from.
+    level (int): The current level of recursion.
+    max_level (int): The maximum level of recursion allowed.
+    Returns:
+        list[str]: A list of extracted links.
 
-Creating a Chatbot
+prepare_kb()
 
-    Run the chatbot.py script. A GUI window will appear, allowing you to select the collection name and ask questions.
-    Select the collection and type your question in the input field. Click the "Ask" button or press "Enter" to submit your question.
-    The chatbot will respond with an answer based on the custom knowledge base.
+Extracts URLs from the input field, fetches documents from those URLs and local PDFs, and creates a vector store based on the documents. The collection_name argument specifies the name of the collection to create. The persist_directory argument specifies the directory path to persist the vector store. The max_level argument specifies the maximum level of recursion allowed when extracting links from the initial URLs. The documents_directory argument specifies the directory path to local PDF files that need to be included in the knowledge base.
+ask_question()
 
-License
+Uses the prepared knowledge base to answer the question entered in the input field.
+Modules
+langchain
 
-This project is released under the MIT License.
+The langchain module provides tools for working with natural language data, including text splitting, embeddings, and vector stores.
+tkinter
 
-Based on code from : https://github.com/prodramp/DeepWorks/blob/main/ChatGPT/LangChainOpenAI.md
+The tkinter module provides a graphical user interface (GUI) for the chatbot.
+openai
+
+The openai module provides access to OpenAI's GPT-3.5 model for generating text.
