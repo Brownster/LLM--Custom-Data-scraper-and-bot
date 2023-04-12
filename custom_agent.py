@@ -1,8 +1,8 @@
 import os
 from tkinter import *
+from tkinter import ttk
 from bs4 import BeautifulSoup
 import requests
-import os
 from pprint import pprint
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
@@ -11,15 +11,18 @@ from langchain.llms import OpenAI
 from langchain.chains import ChatVectorDBChain
 from langchain.document_loaders import UnstructuredURLLoader
 from langchain.document_loaders import UnstructuredPDFLoader
-from typing import List
-from typing import List, Union
+from langchain.document_loaders import UnstructuredWordDocumentLoader
+from typing import List, Dict
 from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitter import TextSplitter
-from pprint import pprint
-from tkinter import ttk
+import tiktoken
+from tkinter import messagebox
 
-os.environ["OPENAI_API_KEY"] = ''
+
+kb_db = None
+
+os.environ["OPENAI_API_KEY"] = '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'
 
 def extract_links(url, level=1, max_level=1):
     """
@@ -63,19 +66,18 @@ def update_status(status_text):
     status_text_widget.config(state=DISABLED)
     status_text_widget.yview(END)
 
-global kb_db
-
 def prepare_kb():
     global kb_db
+    
     update_status("Extracting URLs from URLs provided...")
     start_urls = urls_text.get(1.0, END).strip().split("\n")
     all_urls = []
 
-    # Get the documents directory from the GUI input fields
-    collection_name = collection_name_entry.get().lower()
-    local_directory = directory_name_entry.get()
+    # Hardcode the collection name and persist_directory
+    collection_name = "mykb_db"
+    persist_directory = os.path.join(os.getcwd(), "mykb_db")
+
     max_level = int(max_level_entry.get()) if max_level_entry.get().isdigit() else 3
-    persist_directory = os.path.join(os.getcwd(), local_directory)
     documents_directory = documents_directory_entry.get()
 
     update_status("Extracting links...")
@@ -96,7 +98,10 @@ def prepare_kb():
         return
 
     # Get the list of files in the directory
-    files = [os.path.join(documents_directory, f) for f in os.listdir(documents_directory) if os.path.isfile(os.path.join(documents_directory, f))]
+    if documents_directory and os.path.isdir(documents_directory):
+        files = [os.path.join(documents_directory, f) for f in os.listdir(documents_directory) if os.path.isfile(os.path.join(documents_directory, f))]
+    else:
+        files = []
 
     # Loading local PDF files
     update_status("Processing local PDF files ...")
@@ -110,7 +115,21 @@ def prepare_kb():
             except Exception as e:
                 update_status(f"Error loading document {os.path.basename(file_path)}, exception: {str(e)}")
 
+    # Loading local Word document files
+    update_status("Processing local Word document files ...")
+    doc_data = []
+    for file_path in files:
+        if file_path.lower().endswith('.docx'):
+            try:
+                loader = UnstructuredWordDocumentLoader(file_path)
+                document_data = loader.load()
+                doc_data.extend(document_data)
+            except Exception as e:
+                update_status(f"Error loading document {os.path.basename(file_path)}, exception: {str(e)}")
+
     kb_data.extend(pdf_data)
+    kb_data.extend(doc_data)
+
 
     # Split the documents into smaller chunks
     text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=0)
@@ -119,21 +138,138 @@ def prepare_kb():
     # Generate embeddings for the documents
     embeddings = OpenAIEmbeddings()
 
-    # Create a Chroma vector store from the documents and their embeddings
-    kb_db = Chroma.from_documents(kb_doc,
-                          embeddings,
-                          collection_name=collection_name,
-                          persist_directory=persist_directory
-                          )
+    if kb_db is None:
+        # Create a Chroma vector store from the documents and their embeddings
+        kb_db = Chroma.from_documents(kb_doc,
+                              embeddings,
+                              collection_name=collection_name,
+                              persist_directory=persist_directory
+                              )
+    else:
+        # Add new documents and their embeddings to the existing kb_db
+        kb_db.add_documents(kb_doc, embeddings)
+
     # Persist the vector store
     update_status("Persisting the vector store...")
     kb_db.persist()
     update_status("Knowledge base preparation complete.")
+    if kb_db is not None:
+        save_kb_db_path(os.path.join(persist_directory, collection_name))
 
-# Create the chatbot in the second tab
+# New functions to save and load the knowledge base path
+def save_kb_db_path(path):
+    with open('kb_db_path.txt', 'w') as file:
+        file.write(path)
+
+def load_kb_db_path():
+    try:
+        with open('kb_db_path.txt', 'r') as file:
+            return file.readline().strip()
+    except FileNotFoundError:
+        return None
+
+
+def num_tokens_from_messages(messages: List[Dict[str, str]], model: str = "gpt-4") -> int:
+    """
+    Returns the number of tokens used by a list of messages.
+    Args:
+    messages (list): A list of messages, each of which is a dictionary containing the role and content of the message.
+    model (str): The name of the model to use for tokenization. Defaults to "gpt-4".
+    Returns:
+    int: The number of tokens used by the list of messages.
+    """
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        print("Warning: model not found. Using cl100k_base encoding.")
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    if model == "gpt-3.5-turbo":
+        # !Note: gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301.")
+        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301")
+    elif model == "gpt-4":
+        # !Note: gpt-4 may change over time. Returning num tokens assuming gpt-4-0314.")
+        return num_tokens_from_messages(messages, model="gpt-4-0314")
+    elif model == "gpt-3.5-turbo-0301":
+        tokens_per_message = 4  # every message follows {role/name}\n{content}\n
+        tokens_per_name = -1  # if there's a name, the role is omitted
+    elif model == "gpt-4-0314":
+        tokens_per_message = 3
+        tokens_per_name = 1
+    else:
+        raise NotImplementedError(f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")
+
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3  # every reply is primed with assistant
+    return num_tokens
+
+
+def count_string_tokens(string: str, model_name: str) -> int:
+    """
+    Returns the number of tokens in a text string.
+    Args:
+    string (str): The text string.
+    model_name (str): The name of the encoding to use. (e.g., "gpt-4")
+    Returns:
+    int: The number of tokens in the text string.
+    """
+    encoding = tiktoken.encoding_for_model(model_name)
+    num_tokens = len(encoding.encode(string))
+    return num_tokens
+
+
+# truncate
+def truncate_conversation_history(messages, max_tokens):
+    while num_tokens_from_messages(messages) > max_tokens:
+        messages.pop(0)  # Remove the oldest message
+    return messages
+
+
+def load_kb_db_path() -> str:
+    kb_db_path = os.path.join(os.getcwd(), "mykb_db", "mykb_db.chroma")
+    if os.path.isfile(kb_db_path):
+        return kb_db_path
+    else:
+        return None
+    
+
+if __name__ == "__main__":
+    # Load the vector store at the beginning of the program
+    load_kb_db_path()
+
+    # Create the Tkinter application and set up the user interface
+    root = Tk()
+
+# ask a question
 def ask_question():
+    global kb_db
+    question = question_entry.get()
+    if not question:
+        messagebox.showwarning("Warning", "Please enter a question.")
+        return
+
+    if kb_db is None:
+        kb_db_path_and_db = load_kb_db_path()
+        if kb_db_path_and_db is not None:
+            kb_db_path, kb_db = kb_db_path_and_db
+            print(f"Loaded vector store from {kb_db_path}")
+        else:
+            messagebox.showwarning("Warning", "Please prepare the knowledge base before asking questions.")
+            return
+
     query_statement = question_entry.get()
-    chat_history = []
+    chat_history = [{"role": "system", "content": "You are a helpful assistant."}]
+
+    max_tokens_allowed = 4096 - 200  # Reserve some tokens for the response and buffer
+
+    chat_history.append({"role": "user", "content": query_statement})
+    truncated_messages = truncate_conversation_history(chat_history, max_tokens_allowed)
 
     kb_qa = ChatVectorDBChain.from_llm(
         OpenAI(temperature=0, model_name="gpt-3.5-turbo"),
@@ -142,7 +278,7 @@ def ask_question():
         return_source_documents=True
     )
 
-    result = kb_qa({"question": query_statement, "chat_history": chat_history})
+    result = kb_qa({"question": query_statement, "chat_history": truncated_messages})
     answer_text_widget.config(state=NORMAL)
     answer_text_widget.insert(END, "Question: " + query_statement + "\n")
     answer_text_widget.insert(END, "Answer: " + result["answer"] + "\n")
@@ -184,42 +320,30 @@ urls_label.grid(row=0, column=0, sticky=NW)
 urls_text = Text(tab1_frame, wrap=WORD, width=60, height=10)
 urls_text.grid(row=0, column=1, pady=(0, 10), sticky=W)
 
-collection_label = Label(tab1_frame, text="Collection Name:")
-collection_label.grid(row=1, column=0, sticky=W)
-
-collection_name_entry = Entry(tab1_frame, width=40)
-collection_name_entry.grid(row=1, column=1, sticky=W)
-
-directory_label = Label(tab1_frame, text="Directory Name:")
-directory_label.grid(row=2, column=0, sticky=W)
-
-directory_name_entry = Entry(tab1_frame, width=40)
-directory_name_entry.grid(row=2, column=1, sticky=W)
-
 max_level_label = Label(tab1_frame, text="Max Link Level:")
-max_level_label.grid(row=3, column=0, sticky=W)
+max_level_label.grid(row=1, column=0, sticky=W)
 
 max_level_entry = Entry(tab1_frame, width=40)
-max_level_entry.grid(row=3, column=1, sticky=W)
+max_level_entry.grid(row=1, column=1, sticky=W)
 
 # Add a label and entry field for the documents directory
 documents_directory_label = Label(tab1_frame, text="Documents Directory:")
-documents_directory_label.grid(row=4, column=0, sticky=W)
+documents_directory_label.grid(row=2, column=0, sticky=W)
 
 documents_directory_entry = Entry(tab1_frame, width=40)
-documents_directory_entry.grid(row=4, column=1, sticky=W)
+documents_directory_entry.grid(row=2, column=1, sticky=W)
 
 prepare_button = Button(tab1_frame, text="Prepare", command=prepare_kb)
-prepare_button.grid(row=5, column=1, pady=(10, 0), sticky=E)
+prepare_button.grid(row=3, column=1, pady=(10, 0), sticky=E)
 
 status_label = Label(tab1_frame, text="")
-status_label.grid(row=5, column=1, pady=(10, 0), sticky=W)
+status_label.grid(row=3, column=1, pady=(10, 0), sticky=W)
 
 status_label = Label(tab1_frame, text="Status:")
-status_label.grid(row=6, column=0, pady=(10, 0), sticky=W)
+status_label.grid(row=4, column=0, pady=(10, 0), sticky=W)
 
 status_text_widget = Text(tab1_frame, wrap=WORD, width=60, height=10, state=DISABLED)
-status_text_widget.grid(row=6, column=1, pady=(10, 0), sticky=W)
+status_text_widget.grid(row=4, column=1, pady=(10, 0), sticky=W)
 
 # Move all the tab2 widgets to tab2_frame
 question_label = Label(tab2_frame, text="Enter your question:")
